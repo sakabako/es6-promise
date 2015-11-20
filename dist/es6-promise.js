@@ -939,6 +939,7 @@
       }
 
       var P = local.Promise;
+      console.dir(P);
 
       if (P && Object.prototype.toString.call(P.resolve()) === '[object Promise]' && !P.cast) {
         return;
@@ -947,10 +948,27 @@
         var wrapThennable = function (thennable) {
           return new local.Promise(function (resolve, reject) {
             try {
-              thennable.then(resolve, reject);
+              var then = thennable.then;
             } catch (e) {
-              resolve(thennable);
+              resolve = function () {};
+              lib$es6$promise$asap$$asap(function () {
+                reject(e);
+              });
             }
+            lib$es6$promise$asap$$asap(function () {
+              if (typeof then !== 'function') {
+                resolve(then);
+                return;
+              }
+              try {
+                then.call(thennable, resolve, reject);
+              } catch (e) {
+                resolve = function () {};
+                lib$es6$promise$asap$$asap(function () {
+                  reject(e);
+                });
+              }
+            });
           });
         };
 
@@ -964,7 +982,93 @@
           return false;
         };
 
-        var originalAll = local.Promise.all;
+        local.Promise = function Promise (resolver) {
+
+          if (this instanceof local.Promise === false) {
+            throw new TypeError('Must use new.');
+          }
+
+          if (typeof resolver !== 'function') {
+            throw new TypeError('Resolver must be a function.');
+          }
+
+          var resolveCalled = false;
+          var rejectCalled = false;
+          var promiseCalled = false;
+          var promiseResolve;
+          var promiseReject;
+          var resolutionOrReason;
+
+          var outerResolve = function (resolution) {
+            if (resolveCalled || rejectCalled) {
+              return;
+            }
+            if (isNonPromiseThennable(resolution)) {
+              try {
+                resolution = wrapThennable(resolution);
+              } catch (e) {
+                outerReject(e);
+                return;
+              }
+            }
+            if (promiseResolve) {
+              try {
+                promiseResolve(resolution);
+              } catch (e) {
+                promiseReject(e);
+              }
+              return;
+            }
+            resolveCalled = true;
+            resolutionOrReason = resolution;
+          };
+          var outerReject = function (reason) {
+            if (resolveCalled || rejectCalled) {
+              return;
+            }
+            rejectCalled = true;
+            if (promiseReject) {
+              promiseReject(reason);
+              return;
+            }
+            resolutionOrReason = reason;
+          };
+
+          try {
+            resolver(outerResolve, outerReject);
+          } catch (e) {
+            return new P(function (resolve, reject) {
+              lib$es6$promise$asap$$asap(function () {
+                reject(e);
+              });
+            });
+            //outerReject(e);
+          }
+
+          return new P(function (resolve, reject) {
+            if (rejectCalled) {
+              reject(resolutionOrReason);
+            }
+            promiseReject = reject;
+            if (resolveCalled) {
+              resolve(resolutionOrReason);
+            }
+            promiseResolve = resolve;
+          });
+
+        };
+
+        local.Promise.accept = P.accept;
+        local.Promise.accept = P.accept;
+        local.Promise.defer = P.defer;
+        local.Promise.reject = P.reject;
+
+
+        local.Promise.prototype = P.prototype;
+
+
+
+        var originalAll = P.all;
         local.Promise.all = function (promises) {
           try {
             promises = promises.map(function (thing) {
@@ -979,8 +1083,7 @@
           }
         };
 
-        var originalRace = local.Promise.race;
-
+        var originalRace = P.race;
         local.Promise.race = function (promises) {
           if (!lib$es6$promise$utils$$isArray(promises)) {
             return local.Promise.reject(new TypeError('You must pass an array to race.'));
@@ -997,17 +1100,33 @@
             onRejected = undefined;
           }
           return originalThen.call(this, function (result) {
-            if (onFulfilled) {
-              result = onFulfilled(result);
-              if (isNonPromiseThennable(result)) {
-                return wrapThennable(result);
-              }
+            if (isNonPromiseThennable(result)) {
+              result = wrapThennable(result);
             }
-            return result;
+            return new local.Promise(function (resolve, reject) {
+              lib$es6$promise$asap$$asap(function () {
+                if (onFulfilled) {
+                  try {
+                    resolve(onFulfilled(result));
+                  } catch (e) {
+                    reject(e);
+                  }
+                }
+              });
+            });
+            //return result;
           }, onRejected);
         };
 
-        var originalResolve = local.Promise.resolve;
+        var originalCatch = local.Promise.prototype['catch'];
+        local.Promise.prototype['catch'] = function (onRejected) {
+          if (typeof onRejected !== 'function') {
+            onRejected = undefined;
+          }
+          return originalCatch.call(this, onRejected);
+        };
+
+        var originalResolve = P.resolve;
         local.Promise.resolve = function (thing) {
           try {
             if (isNonPromiseThennable(thing)) {
