@@ -218,15 +218,7 @@ describe("extensions", function() {
           assert(false);
           done();
         })['catch'](function(reason) {
-          var message = reason.message;
-          var isCorrectMessage = false;
-          if (reason.message = "Chaining cycle detected for promise #<Promise>") {
-            isCorrectMessage = true;
-          }
-          if (reason.message = "You cannot resolve a promise with itself") {
-            isCorrectMessage = true;
-          }
-          assert.equal(isCorrectMessage, true);
+          assert.equal(reason.message, "You cannot resolve a promise with itself");
           assert(reason instanceof TypeError);
           done();
         });
