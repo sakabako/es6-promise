@@ -994,7 +994,6 @@
 
           var resolveCalled = false;
           var rejectCalled = false;
-          var promiseCalled = false;
           var promiseResolve;
           var promiseReject;
           var resolutionOrReason;
@@ -1008,44 +1007,35 @@
                 resolution = wrapThennable(resolution);
               } catch (e) {
                 outerReject(e);
-                return;
               }
-            }
-            if (promiseResolve) {
+            } else {
               try {
                 promiseResolve(resolution);
               } catch (e) {
                 promiseReject(e);
               }
-              return;
             }
             resolveCalled = true;
-            resolutionOrReason = resolution;
           };
           var outerReject = function (reason) {
             if (resolveCalled || rejectCalled) {
               return;
             }
             rejectCalled = true;
-            if (promiseReject) {
-              promiseReject(reason);
-              return;
-            }
-            resolutionOrReason = reason;
+            promiseReject(reason);
           };
 
           try {
             resolver(outerResolve, outerReject);
           } catch (e) {
-            return new P(function (resolve, reject) {
+            this._internalPromise = new P(function (resolve, reject) {
               lib$es6$promise$asap$$asap(function () {
                 reject(e);
               });
             });
-            //outerReject(e);
           }
 
-          return new P(function (resolve, reject) {
+          this._internalPromise = new P(function (resolve, reject) {
             if (rejectCalled) {
               reject(resolutionOrReason);
             }
@@ -1063,10 +1053,7 @@
         local.Promise.defer = P.defer;
         local.Promise.reject = P.reject;
 
-
-        local.Promise.prototype = P.prototype;
-
-
+        var proto = local.Promise.prototype;
 
         var originalAll = P.all;
         local.Promise.all = function (promises) {
@@ -1092,14 +1079,14 @@
         };
         
         var originalThen = local.Promise.prototype.then;
-        local.Promise.prototype.then = function (onFulfilled, onRejected) {
+        proto.then = function (onFulfilled, onRejected) {
           if (typeof onFulfilled !== 'function') {
             onFulfilled = undefined;
           }
           if (typeof onRejected !== 'function') {
             onRejected = undefined;
           }
-          return originalThen.call(this, function (result) {
+          return this._internalPromise.then(function (result) {
             if (isNonPromiseThennable(result)) {
               result = wrapThennable(result);
             }
@@ -1114,16 +1101,15 @@
                 }
               });
             });
-            //return result;
           }, onRejected);
         };
 
         var originalCatch = local.Promise.prototype['catch'];
-        local.Promise.prototype['catch'] = function (onRejected) {
+        proto['catch'] = function (onRejected) {
           if (typeof onRejected !== 'function') {
             onRejected = undefined;
           }
-          return originalCatch.call(this, onRejected);
+          return this._internalPromise['catch'](onRejected);
         };
 
         var originalResolve = P.resolve;
